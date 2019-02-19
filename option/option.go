@@ -16,11 +16,10 @@
 package option
 
 import (
-	"net/http"
-
 	"golang.org/x/oauth2"
 	"google.golang.org/api/internal"
 	"google.golang.org/grpc"
+	"net/http"
 )
 
 // A ClientOption is an option for a Google API client.
@@ -232,4 +231,16 @@ type withRequestReason string
 
 func (w withRequestReason) Apply(o *internal.DialSettings) {
 	o.RequestReason = string(w)
+}
+
+// use credentials.GenerateAccessToken
+// https://godoc.org/cloud.google.com/go/iam/credentials/apiv1#IamCredentialsClient.GenerateAccessToken
+func WithAccessToken(accessToken string) ClientOption {
+	return withAccessToken(accessToken)
+}
+
+type withAccessToken string
+
+func (w withAccessToken) Apply(o *internal.DialSettings) {
+	o.AccessToken = string(w)
 }

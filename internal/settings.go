@@ -45,6 +45,8 @@ type DialSettings struct {
 	// https://cloud.google.com/apis/docs/system-parameters
 	QuotaProject  string
 	RequestReason string
+
+	AccessToken string
 }
 
 // Validate reports an error if ds is invalid.
@@ -70,6 +72,9 @@ func (ds *DialSettings) Validate() error {
 		nCreds++
 	}
 	if ds.TokenSource != nil {
+		nCreds++
+	}
+	if ds.AccessToken != "" {
 		nCreds++
 	}
 	if len(ds.Scopes) > 0 && len(ds.Audiences) > 0 {

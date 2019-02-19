@@ -23,6 +23,7 @@ import (
 	"log"
 
 	"go.opencensus.io/plugin/ocgrpc"
+	"golang.org/x/oauth2"
 	"google.golang.org/api/internal"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -73,9 +74,13 @@ func dial(ctx context.Context, insecure bool, opts []option.ClientOption) (*grpc
 		if err != nil {
 			return nil, err
 		}
+		ts := creds.TokenSource
+		if o.AccessToken != "" {
+			ts = oauth2.ReuseTokenSource(&oauth2.Token{AccessToken: o.AccessToken}, ts)
+		}
 		grpcOpts = []grpc.DialOption{
 			grpc.WithPerRPCCredentials(grpcTokenSource{
-				TokenSource:   oauth.TokenSource{creds.TokenSource},
+				TokenSource:   oauth.TokenSource{ts},
 				quotaProject:  o.QuotaProject,
 				requestReason: o.RequestReason,
 			}),
