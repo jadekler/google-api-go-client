@@ -24,6 +24,7 @@ package bundler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"reflect"
 	"sync"
@@ -73,6 +74,9 @@ type Bundler struct {
 	BufferedByteLimit int
 
 	// The maximum number of handler invocations that can be running at once.
+	//
+	// Note: HandlerLimit should not be modified after the first call to Add.
+	//
 	// The default is 1.
 	HandlerLimit int
 
@@ -84,6 +88,9 @@ type Bundler struct {
 	sem       *semaphore.Weighted // enforces BufferedByteLimit
 	semOnce   sync.Once
 	curBundle bundle // incoming items added to this bundle
+	// sequentialOutstanding is a queue that's used in the HandlerLimit=1 case. It holds all
+	// outstanding bundles.
+	sequentialOutstanding []bundle
 
 	// Each bundle is assigned a unique ticket that determines the order in which the
 	// handler is called. The ticket is assigned with mu locked, but waiting for tickets
@@ -261,16 +268,47 @@ func (b *Bundler) startFlushLocked() {
 	// Here, both semaphores must have been initialized.
 	bun := b.curBundle
 	b.curBundle = bundle{items: b.itemSliceZero}
-	ticket := b.nextTicket
-	b.nextTicket++
-	go func() {
-		defer func() {
-			b.sem.Release(int64(bun.size))
-			b.release(ticket)
-		}()
-		b.acquire(ticket)
-		b.handler(bun.items.Interface())
+
+	if b.HandlerLimit == 1 {
+		b.sequentialOutstanding = append(b.sequentialOutstanding, bun)
+		fmt.Println("adding", len(b.sequentialOutstanding))
+		if len(b.sequentialOutstanding) == 1 {
+			ticket := b.nextTicket
+			b.nextTicket++
+			go b.handleSequential(ticket)
+		}
+	} else {
+		ticket := b.nextTicket
+		b.nextTicket++
+		go b.handle(ticket, bun)
+	}
+}
+
+func (b *Bundler) handleSequential(ticket uint64) {
+	var handledItems []bundle
+	defer func() {
+		for _, i := range handledItems {
+			b.sem.Release(int64(i.size))
+		}
+		b.release(ticket)
 	}()
+	b.acquire(ticket)
+	b.mu.Lock()
+	handledItems = b.sequentialOutstanding
+	b.sequentialOutstanding = []bundle{}
+	b.mu.Unlock()
+	for _, i := range handledItems {
+		b.handler(i.items.Interface())
+	}
+}
+
+func (b *Bundler) handle(ticket uint64, bun bundle) {
+	defer func() {
+		b.sem.Release(int64(bun.size))
+		b.release(ticket)
+	}()
+	b.acquire(ticket)
+	b.handler(bun.items.Interface())
 }
 
 // acquire blocks until ticket is the next to be served, then returns. In order for N

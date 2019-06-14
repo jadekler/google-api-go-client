@@ -364,3 +364,33 @@ func TestQuantizeTimes(t *testing.T) {
 		}
 	}
 }
+
+func TestBundler_Handler1_SlowAdd(t *testing.T) {
+	recvd := make(chan int)
+	b := NewBundler(int(0), func(bundlei interface{}) {
+		bundle := bundlei.([]int)
+		for _, i := range bundle {
+			recvd <- i
+		}
+	})
+	b.HandlerLimit = 1
+	b.BundleCountThreshold = 1
+	if err := b.Add(1, 1); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Second)
+	if err := b.Add(1, 1); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Second)
+	select {
+	case <-recvd:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for recv")
+	}
+	select {
+	case <-recvd:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for recv")
+	}
+}
